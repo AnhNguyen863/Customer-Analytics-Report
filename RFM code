@@ -1,0 +1,69 @@
+select ct.CustomerID, datediff(day,max(ct.Purchase_Date), '2022-09-01') as recency,
+round (1.0 * COUNT(ct.ID)/datediff(year,cr.created_date, '2022-09-01'),2) as frequency,
+round (1.0 * sum(ct.GMV)/datediff(year,cr.created_date, '2022-09-01'),2) as monetary,
+row_number() over (order by datediff(day,max(ct.Purchase_Date), '2022-09-01')) as rn_recency,
+row_number() over ( order by round (1.0 * COUNT (ct.ID)/datediff(year,cr.created_date, '2022-09-01'),2)) as rn_frequency,
+row_number() over ( order by round (1.0 * sum (ct.GMV)/datediff(year,cr.created_date, '2022-09-01'),2)) as rn_monetary
+into #calculation
+from Customer_Transaction ct
+join Customer_Registered cr on ct.CustomerID = cr.ID 
+WHERE ct.CustomerID != 0 and ct.CustomerID is not null
+group by ct.CustomerID, cr.created_date 
+
+select * from #calculation1
+
+select *, 
+case
+	when recency < (select recency from #calculation
+	     where rn_recency = (select cast(count(distinct(CustomerID)) *0.25 as int) from #calculation)) then '4'
+	when recency >= (select recency from #calculation 
+	     where rn_recency = (select cast(count(distinct(CustomerID)) *0.25 as int) from #calculation))
+	and recency < (select recency from #calculation 
+	     where rn_recency = (select cast(count(distinct(CustomerID)) *0.5 as int) from #calculation)) then '3'
+	when recency >= (select recency from #calculation 
+	     where rn_recency = (select cast(count(distinct(CustomerID)) *0.5 as int) from #calculation))
+	and recency < (select recency from #calculation 
+	     where rn_recency = (select cast(count(distinct(CustomerID)) *0.75 as int) from #calculation)) then '2'
+	else '1' 
+end as R,
+case
+	when frequency < (select frequency from #calculation
+	     where rn_frequency = (select cast(count(distinct(CustomerID)) *0.25 as int) from #calculation)) then '1'
+	when frequency >= (select frequency from #calculation 
+	     where rn_frequency = (select cast(count(distinct(CustomerID)) *0.25 as int) from #calculation))
+	and frequency < (select frequency from #calculation 
+	     where rn_frequency = (select cast(count(distinct(CustomerID)) *0.5 as int) from #calculation)) then '2'
+	when frequency >= (select frequency from #calculation 
+	     where rn_frequency = (select cast(count(distinct(CustomerID)) *0.5 as int) from #calculation))
+	and frequency < (select frequency from #calculation 
+	     where rn_frequency = (select cast(count(distinct(CustomerID)) *0.75 as int) from #calculation)) then '3'
+	else '4' 
+end as F,
+case
+	when monetary < (select monetary from #calculation 
+	     where rn_monetary = (select cast(count(distinct(CustomerID)) *0.25 as int) from #calculation)) then '1'
+	when monetary >= (select monetary from #calculation 
+	     where rn_monetary = (select cast(count(distinct(CustomerID)) *0.25 as int) from #calculation))
+	and monetary < (select monetary from #calculation 
+	     where rn_monetary = (select cast(count(distinct(CustomerID)) *0.5 as int) from #calculation)) then '2'
+	when monetary >= (select monetary from #calculation 
+	     where rn_monetary = (select cast(count(distinct(CustomerID)) *0.5 as int) from #calculation))
+	and monetary < (select monetary from #calculation 
+	     where rn_monetary = (select cast(count(distinct(CustomerID)) *0.75 as int) from #calculation)) then '3'
+	else '4' 
+end as M
+into #newcalculation 
+from #calculation
+
+select *,
+concat(R,F,M) as RFM
+from #newcalculation
+
+select *,
+CASE 
+	when "Group" in ('444', '443', '343', '344', '333', '334', '244', '243') then 'Khách hàng VIP'
+	when "Group" in ('311','312','313','314','321','322','323','324','332','334','412','413','414','422','423','424','432','442') then 'Khách hành tiềm năng'
+	when "Group" in ('133','134','143','144','233','234','234','244') then 'Khách hàng thân thiết'
+	else 'Khách hàng vãng lai'
+	END as "Customer_type"
+from dbo.RFM_Result rr 
